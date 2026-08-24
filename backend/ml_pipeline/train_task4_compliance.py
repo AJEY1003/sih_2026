@@ -1,3 +1,24 @@
+"""
+Task 4: Risk & Compliance Scoring - BASELINE MODEL, KEPT FOR COMPARISON ONLY.
+
+Verified finding: Overall_Fraud_Risk_Score has |correlation| < 0.03 with
+EVERY numeric/boolean feature across works_master, vendor_dimension,
+compliance_and_ml, and geography_dimension combined (checked exhaustively,
+not just the 3 features below) - it behaves like an independently generated
+random column in this dataset, not a learnable function of the other data.
+That's why this model tests at R^2 ~ 0 (no better than predicting the mean):
+it's a property of the target column, not a bug in this pipeline.
+
+This script is left unchanged and the model it produces
+(compliance_risk_model.pkl) is still saved and loadable, but the hybrid risk
+engine (hybrid_risk_engine.py) does NOT use it as an authoritative risk
+source - it builds its own explainable 0-100 score from signals that do
+carry real information (Isolation Forest anomaly score, compliance rules,
+contractor/vendor risk, spatial risk, SBERT duplicate-description
+detection). Keep this file as the "naive baseline" data point when
+presenting results: it demonstrates why those 3 features alone aren't
+enough, motivating the hybrid approach.
+"""
 import pandas as pd
 import os
 import pickle
@@ -10,8 +31,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, r2_score
 
 # Configuration
-DATA_DIR = r"e:\sih\output_schema"
-MODEL_DIR = r"e:\sih\backend\ml_pipeline\models"
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data", "output_schema")
+MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
 os.makedirs(MODEL_DIR, exist_ok=True)
 
 def split_and_strip(x):

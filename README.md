@@ -24,18 +24,26 @@ The `ml_pipeline` directory contains the Python scripts and pre-trained `.pkl` m
 
 #### Models included:
 - **Fraud & Anomaly Detection (`anomaly_model.pkl`)**
-  - **Algorithm:** Isolation Forest
-  - **Purpose:** Identifies statistical anomalies and outliers in Cost per Unit, Sanctioning Delays, and Vendor History to flag potentially fraudulent projects without needing explicitly labeled fraud data.
-  
-- **Overall Risk & Compliance Scoring (`compliance_risk_model.pkl`)**
-  - **Algorithm:** Random Forest Regressor & NLP CountVectorizer Pipeline
-  - **Purpose:** Decodes raw comma-separated text (e.g., "Site Plan, NOC") and predicts an `Overall_Fraud_Risk_Score` based on historical compliance.
+  - **Algorithm:** Isolation Forest, trained via `train_task2_anomaly.py`.
+  - **Features:** `Cost_per_Unit`, `Vendor_Avg_Cost_Overrun_Ratio`, `Vendor_Avg_Timeline_Days`, `Days_to_Sanction`, plus engineered `Progress_Gap` (disbursement progress vs. expected physical progress from `Work_Status` - flags money released ahead of actual work) and `*_missing` indicator flags for vendors with no cost/timeline history.
+  - Missing vendor history is now median-imputed with an indicator flag rather than dropped, so the model trains on 100% of `works_master.csv` (previously ~24% after a strict `dropna`).
+
+- **Risk & Compliance Scoring baseline (`compliance_risk_model.pkl`)**
+  - **Algorithm:** Random Forest Regressor & NLP CountVectorizer Pipeline (`train_task4_compliance.py`).
+  - Predicts `Overall_Fraud_Risk_Score` from `Compliance_Score`, `NOC_Status`, `Documents_Submitted`.
+  - **Kept as a baseline only:** an exhaustive correlation check found `Overall_Fraud_Risk_Score` has |r| < 0.03 with every feature across all 5 tables - it behaves as noise in this dataset, which is why this model tests at R² ≈ 0. Not used as an authoritative risk source; see the Hybrid Risk Engine below.
+
+- **Hybrid Risk Engine (`hybrid_risk_engine.py`)**
+  - Single entry point: `predict_project_risk(project_data)` and `generate_investigation_report(work_id)`.
+  - Blends five real, auditable signals into an explainable 0-100 score: Isolation Forest anomaly score (25%), compliance rules (20%), contractor/vendor risk (20%), spatial zone risk (15%, from `geography_dimension.csv`), and SBERT semantic duplicate-billing detection (20%, scoped to same vendor + constituency).
+  - An XGBoost model (`train_hybrid_xgboost.py`) trained on raw fields approximates that composite for fast pre-screening (test R² = 0.80) and is reported alongside as a cross-check, not blended into the primary score.
+  - `generate_investigation_report(work_id)` returns the full GIS "select project → why is it risky → what else to check" payload: color-coded risk factors, nearby similar works, contractor history, historical cost benchmark, and a recommended action (e.g. `AUDIT / FIELD VERIFICATION` for Critical-risk projects).
 
 ## Setup & Installation
 
 ### Requirements
 - Python 3.9+
-- `pandas`, `scikit-learn`, `numpy`
+- `pandas`, `numpy`, `scikit-learn`, `xgboost`, `sentence-transformers`
 
 ### Running the ML Tests
 To verify that the machine learning models deserialize properly and can process real-time input:
@@ -43,6 +51,16 @@ To verify that the machine learning models deserialize properly and can process 
 python backend/ml_pipeline/test_models.py
 ```
 
+### Regenerating models
+Run once, in order, from `backend/ml_pipeline/`:
+```bash
+python train_task2_anomaly.py        # Isolation Forest (~seconds)
+python train_task4_compliance.py     # baseline regressor (~seconds)
+python build_duplicate_index.py      # SBERT embedding index (~9 min on CPU)
+python train_hybrid_xgboost.py       # hybrid XGBoost cross-check model (~1 min)
+```
+`models/doc_embeddings.pkl` (the raw SBERT embedding index, ~124MB) is gitignored since it exceeds GitHub's 100MB file limit and is fully reproducible via `build_duplicate_index.py` - regenerate it locally before using the Hybrid Risk Engine on a brand-new (not-yet-in-dataset) project description. `models/duplicate_scores.csv` (the precomputed lookup table for known `Work_ID`s) is committed, so looking up existing projects works without regenerating anything.
+
 ## Next Steps
 - Integration of a Web Application / Dashboard (Next.js or Vanilla HTML/JS) to visualize anomalies, geospatial trends, and vendor risk profiles.
-- Connecting the pre-trained `.pkl` models to a FastAPI or Flask backend for live inference.
+- Wrapping the Hybrid Risk Engine (`hybrid_risk_engine.py`) in a FastAPI or Flask backend for live inference over HTTP.

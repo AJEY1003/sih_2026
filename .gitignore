@@ -1,0 +1,11 @@
+# Python
+__pycache__/
+*.pyc
+
+# Large reproducible ML artifact - regenerate locally via:
+#   python backend/ml_pipeline/build_duplicate_index.py
+# (~9 min on CPU; produces a ~124MB file, over GitHub's 100MB file limit)
+backend/ml_pipeline/models/doc_embeddings.pkl
+
+# Run logs (not a deliverable)
+backend/ml_pipeline/*.log
