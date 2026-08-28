@@ -39,6 +39,35 @@ The `ml_pipeline` directory contains the Python scripts and pre-trained `.pkl` m
   - An XGBoost model (`train_hybrid_xgboost.py`) trained on raw fields approximates that composite for fast pre-screening (test R² = 0.80) and is reported alongside as a cross-check, not blended into the primary score.
   - `generate_investigation_report(work_id)` returns the full GIS "select project → why is it risky → what else to check" payload: color-coded risk factors, nearby similar works, contractor history, historical cost benchmark, and a recommended action (e.g. `AUDIT / FIELD VERIFICATION` for Critical-risk projects).
 
+### 3. FastAPI Backend (`backend/app/`)
+Wraps the ETL star schema and the Hybrid Risk Engine for live HTTP access.
+
+Run it from `backend/`:
+```bash
+cd backend
+pip install -r requirements.txt
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+Interactive docs (Swagger UI): `http://localhost:8000/docs`
+
+Routes:
+| Method & Path | Purpose |
+|---|---|
+| `GET /health` | Liveness check |
+| `POST /api/risk/predict` | Score a project 0-100 via the Hybrid Risk Engine - pass `{"Work_ID": ...}` for a known project, or raw fields for a new/what-if one |
+| `GET /api/risk/investigate/{work_id}` | Full GIS investigation payload: why it's risky, nearby similar works, contractor history, cost benchmark, recommended action |
+| `GET /api/works` | List works - filter by state/constituency/MP/vendor/status, substring `search`, amount range, sort, pagination |
+| `GET /api/works/{work_id}` | One work merged with vendor, geography and compliance data |
+| `GET /api/mps` | List MPs - search, sort, pagination |
+| `GET /api/mps/{mp_name}` | MP performance detail plus their works |
+| `GET /api/vendors` | List vendors - search, sort, pagination |
+| `GET /api/vendors/{vendor_name}` | Vendor track record plus a sample of recent works |
+| `GET /api/geography` | List constituencies with coordinates and zone fraud risk (for map views) |
+| `GET /api/geography/{state}/{constituency_id}` | One constituency's geo + zone risk detail |
+| `GET /api/stats/overview` | Dashboard totals: works/MPs/vendors counts, amounts, status/state breakdowns |
+
+Note: `Work_ID` values contain literal slashes (e.g. `WS/MP005/2024-2025/145074`) - pass them as-is in the URL path, no percent-encoding needed (`GET /api/works/WS/MP005/2024-2025/145074` works directly).
+
 ## Setup & Installation
 
 ### Requirements
@@ -62,5 +91,4 @@ python train_hybrid_xgboost.py       # hybrid XGBoost cross-check model (~1 min)
 `models/doc_embeddings.pkl` (the raw SBERT embedding index, ~124MB) is gitignored since it exceeds GitHub's 100MB file limit and is fully reproducible via `build_duplicate_index.py` - regenerate it locally before using the Hybrid Risk Engine on a brand-new (not-yet-in-dataset) project description. `models/duplicate_scores.csv` (the precomputed lookup table for known `Work_ID`s) is committed, so looking up existing projects works without regenerating anything.
 
 ## Next Steps
-- Integration of a Web Application / Dashboard (Next.js or Vanilla HTML/JS) to visualize anomalies, geospatial trends, and vendor risk profiles.
-- Wrapping the Hybrid Risk Engine (`hybrid_risk_engine.py`) in a FastAPI or Flask backend for live inference over HTTP.
+- Integration of a Web Application / Dashboard (Next.js or Vanilla HTML/JS) to visualize anomalies, geospatial trends, and vendor risk profiles, consuming the FastAPI backend above.
